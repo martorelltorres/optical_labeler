@@ -1,0 +1,17 @@
+# OPTICAL_GPU selects the GPU by its nvidia-smi index (default 0), e.g.
+#   OPTICAL_GPU=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm labeler ...
+# Inside the container the selected GPU is cuda:0. Several runs can use different GPUs
+# in parallel.
+services:
+  labeler:
+    build:
+      args:
+        TORCH_VARIANT: cu121
+    image: optical_labeler:cu121
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${OPTICAL_GPU:-0}"]
+              capabilities: [gpu]

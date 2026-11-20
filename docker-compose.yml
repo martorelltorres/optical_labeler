@@ -1,0 +1,16 @@
+# CPU:  docker compose run --rm labeler <command>
+# GPU:  docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm labeler <command>
+# The package is mounted at /workspace and the data directory (OPTICAL_DATA) read-only at
+# /workspace/data; the paths in configs/sites.yaml are relative to /workspace.
+services:
+  labeler:
+    build:
+      context: .
+      args:
+        TORCH_VARIANT: cpu
+    image: optical_labeler:cpu
+    user: "${UID:-1000}:${GID:-1000}"
+    shm_size: "4gb"
+    volumes:
+      - .:/workspace
+      - ${OPTICAL_DATA:-../sss_segmentation/bagfiles}:/workspace/data:ro

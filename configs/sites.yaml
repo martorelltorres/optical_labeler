@@ -1,0 +1,17 @@
+# Optical mosaics with manual masks (scripts/train.py).
+# Paths are relative to the package root; data/ is the read-only data mount (see README).
+# Masks may be drawn on any downscaled copy of the mosaic.
+factor: 4                 # working resolution = mosaic resolution x factor (x4 mosaics: ~2.6 cm)
+band_m: 0.1               # band around Posidonia boundaries ignored in training and evaluation
+folds: {k: 3, block_m: 5.0, gap_m: 0.5}
+
+sites:
+  andratx_135222:
+    mosaic: data/13_52_22/mosaic_d1prod/mosaic_x4/mosaic_x4.tif
+    posidonia_mask: data/13_52_22/mosaic_d1prod/mosaico_etiquetado_manual/posidonia_manual_r2_mosaic_x4.png
+    rock_mask: data/13_52_22/mosaic_d1prod/mosaico_etiquetado_manual/rock_manual_r2_mosaic_x4.png
+  pollenca_134616:
+    # Posidonia only: rock is not annotated and counts as background.
+    mosaic: data/15_46_16/mosaic_d1prod/mosaic_x4/mosaic_x4.tif
+    posidonia_mask: data/15_46_16/mosaic_d1prod/mosaico_etiquetado_manual/posidonia_manual_r2_mosaic_x4.png
+    rock_mask: null

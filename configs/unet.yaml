@@ -1,0 +1,12 @@
+# U-Net on RGB optical mosaics, classes background / Posidonia / rock (optical_labeler.optical).
+name: optical_r34
+model: {encoder: resnet34, encoder_weights: imagenet}
+tile: 256
+batch: 16
+iters: 6000
+lr: 3.0e-4
+weight_decay: 1.0e-2
+warmup_iters: 200
+pos_fraction: 0.5
+augment: {}               # overrides of sss_seg.optical.COLOR_DEFAULTS
+infer: {tile: 512, overlap: 128, batch: 4}

@@ -1,0 +1,7 @@
+data/
+runs/
+logs/
+.cache/
+.claude/
+.git/
+**/__pycache__/
