@@ -1,92 +1,90 @@
 # optical_labeler
 
-Propuesta automática de etiquetas **Posidonia / roca / resto** sobre fotomosaicos ópticos
-georreferenciados (cámara del AUV). Una U-Net sobre RGB propone las máscaras. Una persona las
-revisa en un SIG y el resultado son máscaras con el mismo formato que las dibujadas a mano, que
-se pueden usar donde se usen las manuales; por ejemplo, para etiquetar mosaicos de side-scan
-sonar co-registrados.
+Automatic proposal of **Posidonia / rock / other** labels on georeferenced optical mosaics (AUV
+camera). A U-Net on RGB proposes the masks. A person reviews them in a GIS, and the result is a set
+of masks in the same format as hand-drawn ones, usable wherever manual masks are used; for example,
+to label co-registered side-scan sonar mosaics.
 
-## Flujo
+## Workflow
 
-1. **Entrenar** con fotomosaicos que tengan máscara manual (`configs/sites.yaml`).
-2. **Proponer** etiquetas sobre un fotomosaico nuevo: máscaras, probabilidades, un mapa de duda y
-   polígonos GeoJSON.
-3. **Revisar** los polígonos en un SIG (QGIS) y corregir la clase o la forma.
-4. **Convertir** los polígonos revisados en máscaras.
+1. **Train** on optical mosaics that have manual masks (`configs/sites.yaml`).
+2. **Propose** labels on a new optical mosaic: masks, probabilities, a doubt map and GeoJSON
+   polygons.
+3. **Review** the polygons in a GIS (QGIS), correcting their class or shape.
+4. **Convert** the reviewed polygons back to masks.
 
-## Datos
+## Data
 
-Los datos no se versionan. `docker-compose.yml` monta el directorio `OPTICAL_DATA` (por defecto
-`../sss_segmentation/bagfiles`) en solo lectura en `/workspace/data`, y las rutas de
-`configs/sites.yaml` son relativas a `/workspace`. Ningún script escribe en `data/`.
+Data are not versioned. `docker-compose.yml` mounts the `OPTICAL_DATA` directory (by default
+`../sss_segmentation/bagfiles`) read-only at `/workspace/data`, and the paths in
+`configs/sites.yaml` are relative to `/workspace`. No script writes to `data/`.
 
-Formato de entrada:
+Input format:
 
-- **Fotomosaico**: GeoTIFF RGB o RGBA. La banda alfa marca los píxeles válidos (sin alfa, son los
-  píxeles no negros).
-- **Máscaras manuales**: PNG en escala de grises, 255 = clase, dibujadas sobre una copia del
-  mosaico reducida por cualquier factor (se remuestrean a la rejilla de trabajo). Una por clase
-  (`posidonia_mask`, `rock_mask`); `rock_mask: null` si la roca no está anotada (cuenta como resto).
+- **Optical mosaic**: RGB or RGBA GeoTIFF. The alpha band marks the valid pixels (without alpha,
+  the non-black pixels are valid).
+- **Manual masks**: grayscale PNG, 255 = class, drawn on a copy of the mosaic downscaled by any
+  factor (they are resampled to the working grid). One per class (`posidonia_mask`,
+  `rock_mask`); `rock_mask: null` if rock is not annotated (it then counts as other).
 
-La resolución de trabajo es la del mosaico reducida por `factor` (con mosaicos x4, ~2,6 cm/px).
+The working resolution is the mosaic resolution reduced by `factor` (~2.6 cm/px with x4 mosaics).
 
-## Puesta en marcha
+## Setup
 
 ```bash
-docker compose build                                   # imagen CPU
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml build   # imagen CUDA
+docker compose build                                                   # CPU image
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml build   # CUDA image
 ```
 
-Con GPU, `OPTICAL_GPU` elige la tarjeta por su índice de `nvidia-smi`:
+With a GPU, `OPTICAL_GPU` selects the card by its `nvidia-smi` index:
 
 ```bash
-OPTICAL_GPU=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm labeler <orden>
+OPTICAL_GPU=1 docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm labeler <command>
 ```
 
-## Uso
+## Usage
 
 ```bash
-# Validación cruzada espacial en un sitio (bloques de configs/sites.yaml)
+# Spatial cross-validation on one site (blocks from configs/sites.yaml)
 docker compose run --rm labeler python scripts/train.py --protocol cv --site andratx_135222
 
-# Entrenamiento con todo un sitio y test en otros
+# Train on a whole site and test on others
 docker compose run --rm labeler python scripts/train.py --protocol transfer \
     --site andratx_135222 --test pollenca_134616
 
-# Propuesta de etiquetas sobre un fotomosaico (media de los modelos dados)
+# Label proposal on an optical mosaic (mean of the given models)
 docker compose run --rm labeler python scripts/auto_label.py \
-    --models 'runs/optical_r34/transfer/all/seed*/model.pt' --mosaic <fotomosaico.tif> --out <prefijo>
+    --models 'runs/optical_r34/transfer/all/seed*/model.pt' --mosaic <mosaic.tif> --out <prefix>
 
-# Polígonos revisados → máscaras
-docker compose run --rm labeler python scripts/masks_from_vectors.py --vectors <prefijo>_labels.geojson \
-    --mosaic <fotomosaico.tif> --out <prefijo_revisado>
+# Reviewed polygons → masks
+docker compose run --rm labeler python scripts/masks_from_vectors.py --vectors <prefix>_labels.geojson \
+    --mosaic <mosaic.tif> --out <reviewed_prefix>
 ```
 
-`train.py` escribe en `runs/<modelo>/<protocolo>/<partición>/seed<k>/` el modelo (`model.pt`), las
-métricas (`metrics.json`, recuentos de IoU por clase y sitio de test) y las probabilidades por clase
-sobre el mosaico de test (`prob_<sitio>.tif`).
+`train.py` writes to `runs/<model>/<protocol>/<split>/seed<k>/` the model (`model.pt`), the metrics
+(`metrics.json`, IoU counts per class and test site) and the class probabilities over the test
+mosaic (`prob_<site>.tif`).
 
-`auto_label.py` reduce el mosaico a la resolución con la que se entrenaron los modelos. Para
-modelos guardados sin esa resolución hay que darla con `--train-res-m`. Escribe:
+`auto_label.py` reduces the mosaic to the resolution the models were trained at. Models saved
+without that resolution need it through `--train-res-m`. It writes:
 
-| fichero | contenido |
+| file | content |
 |---|---|
-| `<prefijo>_posidonia.png`, `<prefijo>_rock.png` | máscaras con el formato de las manuales |
-| `<prefijo>_prob.tif` | probabilidades por clase (uint8 0..250; bandas resto, Posidonia, roca) |
-| `<prefijo>_doubt.tif` | banda 1: 1 − probabilidad máxima; banda 2: desviación de P(Posidonia) entre modelos |
-| `<prefijo>_labels.geojson` | polígonos de Posidonia y roca (CRS del mosaico) con propiedad `class`, probabilidad y duda medias |
+| `<prefix>_posidonia.png`, `<prefix>_rock.png` | masks in the format of the manual ones |
+| `<prefix>_prob.tif` | class probabilities (uint8 0..250; bands other, Posidonia, rock) |
+| `<prefix>_doubt.tif` | band 1: 1 − highest probability; band 2: standard deviation of P(Posidonia) between models |
+| `<prefix>_labels.geojson` | Posidonia and rock polygons (mosaic CRS) with a `class` property and their mean probability and doubt |
 
-Al revisar en el SIG, cada polígono conserva la propiedad `class` (`posidonia` o `rock`);
-`masks_from_vectors.py` solo lee esa propiedad. Los polígonos tienen que estar en el CRS del
-mosaico.
+When reviewing in the GIS, every polygon keeps its `class` property (`posidonia` or `rock`);
+`masks_from_vectors.py` only reads that property. The polygons must be in the CRS of the mosaic.
 
 ## Tests
 
 ```bash
-docker compose run --rm labeler          # ejecuta python -m unittest discover
+docker compose run --rm labeler          # runs python -m unittest discover
 ```
 
-## Licencias
+## Licenses
 
-Dependencias en `requirements.txt`, con la versión fijada y la licencia anotada; torch y
-torchvision se instalan en el `Dockerfile`. Ninguna es GPL.
+Dependencies are listed in `requirements.txt` with pinned versions and their licenses; torch and
+torchvision are installed in the `Dockerfile`. None is GPL.
