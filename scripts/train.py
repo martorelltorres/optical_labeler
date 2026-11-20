@@ -25,9 +25,10 @@ from torch.utils.data import DataLoader
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from optical_labeler.infer import predict_mosaic  # noqa: E402
-from optical_labeler.optical import (OPTICAL_CODES, OpticalTiles, build_optical_unet,  # noqa: E402
-                                     class_iou, load_optical, optical_folds, optical_loss,
-                                     optical_predictor, region_codes)
+from optical_labeler.codes import CLASS_NAMES  # noqa: E402
+from optical_labeler.optical import (MASK_ORDER, OPTICAL_CODES, OpticalTiles,  # noqa: E402
+                                     build_optical_unet, class_iou, load_optical, optical_folds,
+                                     optical_loss, optical_predictor, region_codes)
 from optical_labeler.split import NO_FOLD  # noqa: E402
 
 
@@ -63,10 +64,11 @@ def main():
         cfg["iters"] = args.iters
     scfg = yaml.safe_load(open(args.sites))
     rel = lambda p: p and os.path.join(ROOT, p)
-    load = lambda n: load_optical(rel(scfg["sites"][n]["mosaic"]), rel(scfg["sites"][n]["posidonia_mask"]),
-                                  rel(scfg["sites"][n].get("rock_mask")), scfg["factor"],
-                                  rel(scfg["sites"][n].get("ignore_mask")),
-                                  rel(scfg["sites"][n].get("area_mask")))
+    def load(n):
+        site = scfg["sites"][n]
+        masks = {k: rel(site.get(f"{k}_mask")) for k in MASK_ORDER}
+        return load_optical(rel(site["mosaic"]), masks, scfg["factor"], rel(site.get("area_mask")),
+                            site.get("annotated"))
     band, fc = scfg.get("band_m", 0.0), scfg["folds"]
     train_site = load(args.site)
     folds = optical_folds(train_site.codes, train_site.res, fc["k"], fc["block_m"], fc["gap_m"])
@@ -90,8 +92,8 @@ def main():
             opt, lambda it: lr_factor(it, cfg["warmup_iters"], cfg["iters"]))
         curve, window, t0 = [], [], time.time()
         model.train()
-        for it, (img, code) in enumerate(dl):
-            loss = optical_loss(model(img.to(device)), code.to(device))
+        for it, (img, code, allowed) in enumerate(dl):
+            loss = optical_loss(model(img.to(device)), code.to(device), allowed)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
@@ -106,7 +108,7 @@ def main():
         d = os.path.join(args.out, cfg["name"], args.protocol, split_id, f"seed{args.seed}")
         os.makedirs(d, exist_ok=True)
         torch.save({"state_dict": model.state_dict(), "config": cfg, "factor": scfg["factor"],
-                    "res_m": train_site.res}, os.path.join(d, "model.pt"))
+                    "res_m": train_site.res, "classes": list(OPTICAL_CODES)}, os.path.join(d, "model.pt"))
         record = {"model": cfg["name"], "protocol": args.protocol, "split": split_id,
                   "seed": args.seed, "train_site": args.site, "train_folds": train_folds,
                   "loss_curve": curve, "train_seconds": time.time() - t0, "test": {}}
@@ -115,10 +117,11 @@ def main():
             probs = predict_mosaic(predict, m.image, m.valid, **cfg["infer"])
             pred = np.asarray(OPTICAL_CODES, np.uint8)[np.nan_to_num(probs).argmax(0)]
             tcodes = region_codes(m, folds if test_folds else None, test_folds, band)
-            record["test"][name] = class_iou(pred, tcodes, m.valid & (tcodes != 255))
+            record["test"][name] = class_iou(pred, tcodes, m.valid & (tcodes != 255), m.annotated)
             write_class_probs(os.path.join(d, f"prob_{name}.tif"), probs, m)
         json.dump(record, open(os.path.join(d, "metrics.json"), "w"), indent=1)
-        print(json.dumps({n: {c: round(v["inter"] / max(v["union"], 1), 3) for c, v in r.items()}
+        print(json.dumps({n: {CLASS_NAMES[int(c)]: round(v["inter"] / max(v["union"], 1), 3)
+                              for c, v in r.items() if v["complete"]}
                           for n, r in record["test"].items()}), flush=True)
 
 

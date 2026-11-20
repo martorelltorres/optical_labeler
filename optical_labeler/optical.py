@@ -3,9 +3,10 @@
 The segmenter labels camera mosaics automatically; its masks have the format of the manual
 ones (PNG, 255 = class), so they can replace them wherever those are used.
 
-Label codes as in optical_labeler.codes: BACKGROUND (annotated, neither Posidonia nor rock),
-POSIDONIA, ROCK, IGNORE (band around Posidonia boundaries), NODATA (not annotated).
-The network predicts OPTICAL_CODES in this order.
+Label codes as in optical_labeler.codes. The network predicts the classes of OPTICAL_CODES in
+that order. Sites are annotated partially: each declares the classes it annotates, and a
+BACKGROUND pixel there is only known to be one of the other classes (partial-label loss).
+Models trained with the earlier three outputs (LEGACY_CODES) are still read.
 """
 from dataclasses import dataclass
 
@@ -20,12 +21,15 @@ from rasterio.enums import ColorInterp, Resampling
 from scipy.ndimage import gaussian_filter
 from torch.utils.data import Dataset
 
-from optical_labeler.codes import BACKGROUND, IGNORE, NODATA, POSIDONIA, ROCK, apply_band
+from optical_labeler.codes import (BACKGROUND, DEAD_POSIDONIA, IGNORE, NAME_CODES, NODATA,
+                                   OTHER, POSIDONIA, ROCK, SAND, apply_band)
 from optical_labeler.split import NO_FOLD, block_folds
 from optical_labeler.tiling import CenterSampler, geometric, scaled_crop
 
 Image.MAX_IMAGE_PIXELS = None
-OPTICAL_CODES = (BACKGROUND, POSIDONIA, ROCK)
+OPTICAL_CODES = (POSIDONIA, DEAD_POSIDONIA, ROCK, SAND, OTHER)
+LEGACY_CODES = (BACKGROUND, POSIDONIA, ROCK)
+MASK_ORDER = ("other", "sand", "rock", "dead_posidonia", "posidonia", "ignore")   # later wins
 IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 COLOR_DEFAULTS = {"scale": (0.8, 1.25), "gain": (0.8, 1.2), "contrast": (0.8, 1.2),
                   "brightness": (-0.08, 0.08), "noise_p": 0.3, "noise_sigma": (0.005, 0.03),
@@ -40,6 +44,7 @@ class OpticalMosaic:
     transform: Affine
     crs: object
     source_shape: tuple     # (height, width) of the mosaic file
+    annotated: tuple = ()   # class codes annotated; BACKGROUND pixels are one of the others
 
     @property
     def res(self):
@@ -52,15 +57,21 @@ def read_class_mask(path, shape):
     return np.asarray(m.resize((shape[1], shape[0]), Image.BOX)) > 127
 
 
-def load_optical(mosaic, posidonia_mask=None, rock_mask=None, factor=4, ignore_mask=None,
-                 area_mask=None):
+def load_optical(mosaic, masks=None, factor=4, area_mask=None, annotated=None):
     """Read an RGB(A) mosaic reduced by `factor` (area average) and its class masks.
 
-    Valid pixels come from the alpha band (or non-black RGB without one). Without masks every
-    code is NODATA; with them the valid pixels are BACKGROUND, ROCK or POSIDONIA (Posidonia over
-    rock where both masks are set). area_mask limits the annotated pixels to the reviewed area
-    (NODATA outside it); ignore_mask marks pixels that are IGNORE whatever the other masks say.
+    masks: {name: path} with names among optical_labeler.codes.CLASS_NAMES values and "ignore".
+    Valid pixels come from the alpha band (or non-black RGB without one). Without class masks
+    every code is NODATA; with them the valid pixels inside area_mask (all valid pixels without
+    one) are annotated: the class of their mask, IGNORE under the ignore mask, BACKGROUND
+    elsewhere. Overlaps resolve in MASK_ORDER (Posidonia over rock, ignore over everything).
+    annotated: class names whose extent is complete at this site, so that BACKGROUND means "none
+    of them"; defaults to the classes given in masks.
     """
+    masks = {k: v for k, v in (masks or {}).items() if v is not None}
+    unknown = set(masks) - set(MASK_ORDER)
+    if unknown:
+        raise ValueError(f"unknown mask names {sorted(unknown)}")
     with rasterio.open(mosaic) as src:
         h, w = src.height // factor, src.width // factor
         rgb = src.read([1, 2, 3], out_shape=(3, h, w), resampling=Resampling.average)
@@ -74,15 +85,25 @@ def load_optical(mosaic, posidonia_mask=None, rock_mask=None, factor=4, ignore_m
     img = np.moveaxis(rgb, 0, -1).astype(np.float32) / 255.0
     img[~valid] = 0.0
     codes = np.full((h, w), NODATA, np.uint8)
-    if posidonia_mask is not None:
+    classes = [n for n in masks if n != "ignore"]
+    if classes:
         lab = valid & read_class_mask(area_mask, (h, w)) if area_mask is not None else valid
         codes[lab] = BACKGROUND
-        if rock_mask is not None:
-            codes[lab & read_class_mask(rock_mask, (h, w))] = ROCK
-        codes[lab & read_class_mask(posidonia_mask, (h, w))] = POSIDONIA
-        if ignore_mask is not None:
-            codes[lab & read_class_mask(ignore_mask, (h, w))] = IGNORE
-    return OpticalMosaic(img, valid, codes, transform, crs, source_shape)
+        for name in MASK_ORDER:
+            if name in masks:
+                code = IGNORE if name == "ignore" else NAME_CODES[name]
+                codes[lab & read_class_mask(masks[name], (h, w))] = code
+    names = classes if annotated is None else list(annotated)
+    bad = set(names) - set(NAME_CODES)
+    if bad:
+        raise ValueError(f"unknown annotated classes {sorted(bad)}")
+    return OpticalMosaic(img, valid, codes, transform, crs, source_shape,
+                         tuple(NAME_CODES[n] for n in names))
+
+
+def background_classes(annotated, class_codes=OPTICAL_CODES):
+    """Boolean vector over class_codes: the classes a BACKGROUND pixel can be at a site."""
+    return np.array([c not in annotated for c in class_codes], bool)
 
 
 def optical_folds(codes, res, k=3, block_m=5.0, gap_m=0.5):
@@ -112,26 +133,42 @@ class RGBNormalized(torch.nn.Module):
         return self.net((x - self.mean) / self.std)
 
 
-def build_optical_unet(encoder="resnet34", encoder_weights="imagenet"):
+def build_optical_unet(encoder="resnet34", encoder_weights="imagenet", classes=len(OPTICAL_CODES)):
     net = smp.Unet(encoder_name=encoder, encoder_weights=encoder_weights, in_channels=3,
-                   classes=len(OPTICAL_CODES))
+                   classes=classes)
     return RGBNormalized(net)
 
 
-def optical_loss(logits, code, dice_weight=1.0):
-    """Cross-entropy over annotated pixels plus soft Dice of P(Posidonia) over them."""
+def optical_loss(logits, code, allowed, dice_weight=1.0):
+    """Partial-label loss over the classes of OPTICAL_CODES, plus soft Dice of P(Posidonia).
+
+    code (B, 1, H, W): pixels of a class add -log p(class); BACKGROUND pixels add
+    -log(sum of p over the classes allowed for their tile), allowed being a boolean (B, C) from
+    background_classes, and carry no loss when nothing is allowed. The Dice of Posidonia counts
+    class pixels and the BACKGROUND pixels of tiles where Posidonia is annotated.
+    """
     code = code[:, 0].long()
     lut = torch.full((256,), -1, dtype=torch.long, device=code.device)
     for i, c in enumerate(OPTICAL_CODES):
         lut[c] = i
     idx = lut[code]
-    m = idx >= 0
-    ce = F.cross_entropy(logits, idx.clamp(min=0), reduction="none")
-    n = m.sum().clamp(min=1)
-    p = torch.softmax(logits, 1)[:, OPTICAL_CODES.index(POSIDONIA)] * m
-    t = ((code == POSIDONIA) & m).float()
+    specific = idx >= 0
+    logp = F.log_softmax(logits, 1)
+    ce = -(logp.gather(1, idx.clamp(min=0)[:, None])[:, 0] * specific).sum()
+    allowed = allowed.to(logits.device).bool()
+    masked = logp.masked_fill(~allowed[:, :, None, None], float("-inf"))
+    has_any = allowed.any(1)[:, None, None]
+    unspecified = (code == BACKGROUND) & has_any
+    lse = torch.logsumexp(masked, 1).masked_fill(~unspecified, 0.0)
+    partial = -lse.sum()
+    n = (specific | unspecified).sum().clamp(min=1)
+    ipo = OPTICAL_CODES.index(POSIDONIA)
+    po_known = (~allowed[:, ipo])[:, None, None]
+    m = (specific | (unspecified & po_known)).float()
+    p = logp[:, ipo].exp() * m
+    t = (code == POSIDONIA).float() * m
     dice = 1.0 - (2 * (p * t).sum() + 1.0) / (p.sum() + t.sum() + 1.0)
-    return (ce * m).sum() / n + dice_weight * dice
+    return (ce + partial) / n + dice_weight * dice
 
 
 def color_jitter(img, valid, rng, p=COLOR_DEFAULTS):
@@ -153,14 +190,16 @@ def color_jitter(img, valid, rng, p=COLOR_DEFAULTS):
 class OpticalTiles(Dataset):
     """Random augmented tiles of (mosaic, codes) pairs; centres on Posidonia with pos_fraction.
 
-    Items are (image float32 (3, tile, tile), codes uint8 (1, tile, tile)).
+    Items are (image float32 (3, tile, tile), codes uint8 (1, tile, tile), allowed bool (C,)):
+    allowed lists the classes a BACKGROUND pixel of that mosaic can be (background_classes).
     """
 
     def __init__(self, sources, tile, length, pos_fraction=0.5, aug=None, seed=0):
         self.items, w = [], []
         for m, codes in sources:
             lab = codes < IGNORE
-            self.items.append((m, codes, CenterSampler(lab, codes == POSIDONIA, pos_fraction)))
+            self.items.append((m, codes, CenterSampler(lab, codes == POSIDONIA, pos_fraction),
+                               torch.from_numpy(background_classes(m.annotated))))
             w.append(float(lab.sum()))
         self.p = np.asarray(w) / sum(w)
         self.tile, self.length, self.seed = tile, length, seed
@@ -171,7 +210,7 @@ class OpticalTiles(Dataset):
 
     def __getitem__(self, i):
         rng = np.random.default_rng((self.seed, i, torch.initial_seed() % 2**31))
-        m, codes, sampler = self.items[rng.choice(len(self.items), p=self.p)]
+        m, codes, sampler, allowed = self.items[rng.choice(len(self.items), p=self.p)]
         scale = rng.uniform(*self.aug["scale"]) if self.aug else 1.0
         img, val, code = scaled_crop([m.image, m.valid, codes], sampler(rng), self.tile,
                                              scale, [0.0, False, NODATA])
@@ -179,7 +218,7 @@ class OpticalTiles(Dataset):
             img, val, code = geometric([img, val, code], rng)
             img = color_jitter(img, val, rng, self.aug)
         img = torch.from_numpy(np.ascontiguousarray(np.moveaxis(img, -1, 0), np.float32))
-        return img, torch.from_numpy(np.ascontiguousarray(code, np.uint8))[None]
+        return img, torch.from_numpy(np.ascontiguousarray(code, np.uint8))[None], allowed
 
 
 def optical_predictor(model, device):
@@ -192,12 +231,19 @@ def optical_predictor(model, device):
     return predict
 
 
-def class_iou(pred_codes, codes, mask):
-    """IoU per class of OPTICAL_CODES over the annotated pixels of mask, plus counts."""
-    m = mask & (codes < IGNORE)
+def class_iou(pred_codes, codes, mask, annotated, class_codes=OPTICAL_CODES):
+    """IoU counts per class over the labeled pixels of mask.
+
+    For a class annotated at the site every labeled pixel counts (BACKGROUND as "not this class");
+    for the others only pixels with a specific class count, and "complete" is False.
+    """
+    lab = mask & (codes < IGNORE)
     out = {}
-    for c in OPTICAL_CODES:
+    for c in class_codes:
+        if c == BACKGROUND:
+            continue
+        m = lab if c in annotated else lab & (codes != BACKGROUND)
         p, t = (pred_codes == c) & m, (codes == c) & m
-        inter, union = int((p & t).sum()), int((p | t).sum())
-        out[str(c)] = {"inter": inter, "union": union, "true": int(t.sum())}
+        out[str(c)] = {"inter": int((p & t).sum()), "union": int((p | t).sum()), "true": int(t.sum()),
+                       "complete": c in annotated}
     return out

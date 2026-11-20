@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Rasterize reviewed Posidonia / rock / ignore polygons (GeoJSON from auto_label.py, edited in a
 GIS) into masks in the format of the manual ones, on the grid of the optical mosaic reduced by
---factor. Writes <out>_posidonia.png, <out>_rock.png and <out>_ignore.png (255 = class), and
-<out>_area.png with --area. Overlaps resolve as ignore > rock > Posidonia (optical_labeler.vectors).
+--factor. Writes <out>_<class>.png for posidonia, dead_posidonia, rock, sand, other and ignore
+(255 = class), and <out>_area.png with --area. Overlaps resolve with the priority of
+optical_labeler.vectors (ignore > rock > dead_posidonia > sand > other > posidonia).
 The polygons must be in the CRS of the mosaic.
 """
 import argparse

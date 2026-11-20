@@ -25,6 +25,20 @@ class ClassMasksTest(unittest.TestCase):
         total = m["posidonia"].astype(int) + m["rock"] + m["ignore"]
         self.assertEqual(total.max(), 1)
 
+    def test_dead_posidonia_drawn_over_posidonia(self):
+        feats = [square(0, 0, 10, 10, "posidonia"), square(0, 0, 4, 10, "dead_posidonia"),
+                 square(0, 0, 2, 10, "rock")]
+        m, _ = class_masks(feats, (10, 10), T)
+        self.assertTrue(m["rock"][:, :2].all())
+        self.assertTrue(m["dead_posidonia"][:, 2:4].all() and not m["dead_posidonia"][:, :2].any())
+        self.assertTrue(m["posidonia"][:, 4:].all() and not m["posidonia"][:, :4].any())
+
+    def test_sand_and_other_drawn_over_posidonia(self):
+        feats = [square(0, 0, 10, 10, "posidonia"), square(0, 0, 3, 10, "sand"), square(3, 0, 5, 10, "other")]
+        m, _ = class_masks(feats, (10, 10), T)
+        self.assertTrue(m["sand"][:, :3].all() and m["other"][:, 3:5].all())
+        self.assertTrue(m["posidonia"][:, 5:].all() and not m["posidonia"][:, :5].any())
+
     def test_masks_clipped_to_area(self):
         m, area = class_masks([square(0, 0, 10, 10, "posidonia")], (10, 10), T,
                               [square(0, 5, 10, 10)])

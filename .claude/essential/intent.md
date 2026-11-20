@@ -18,8 +18,11 @@ etiquetas revisadas.
 
 ## Decisiones permanentes, en vigor
 
-- **Clases**: Posidonia, roca, resto, más `ignore` en la revisión humana (blancos artificiales).
-  En polígonos revisados: ignore > roca > Posidonia donde se solapan.
+- **Clases** (decisión del usuario, 2026-11-20): Posidonia, Posidonia muerta (mata), roca, arena y otro
+  fondo, más `ignore` en la revisión (blancos artificiales). En polígonos revisados la prioridad es
+  ignore > roca > mata > arena > otro > Posidonia.
+- **Etiquetas parciales**: cada sitio declara las clases anotadas completas (`annotated`); un píxel anotado sin
+  clase solo se sabe que es una de las demás (pérdida marginal, como el `ce_dice` de `sss_segmentation`).
 - **Contrato con `sss_segmentation`**: máscaras PNG 255 = clase sobre la rejilla del mosaico y
   GeoJSON con propiedad `class`. `sss_segmentation` las consume como si fueran manuales y no
   importa código de aquí.
@@ -36,7 +39,9 @@ etiquetas revisadas.
 | ruta | qué contiene |
 |---|---|
 | `CLAUDE.md` | cómo se trabaja |
-| `.claude/plans/plan_etiquetado_optico.md` | plan vigente: fases, criterios A–D, resultados, fase O5 |
+| `.claude/plans/plan_etiquetado_optico.md` | plan de la vía 1: fases, criterios A–D, resultados, fase O5 |
+| `.claude/plans/plan_clases_ampliadas.md` | plan de las cinco clases y las etiquetas parciales |
+| `runs/review/` | recortes de revisión en QGIS (movidos desde `sss_segmentation` el 2026-11-20) y capa de Andratx para arena y mata |
 | `.claude/context/analisis_oof_andratx.md` | etiquetas automáticas frente a la manual en Andratx |
 | `.claude/history/done.md` | la historia del proyecto, un hito por línea |
 | `runs/optical_r34/` | modelos `cv` (3 folds × 3 semillas) y `transfer` (todo Andratx, 3 semillas) |

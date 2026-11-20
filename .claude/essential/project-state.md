@@ -15,6 +15,21 @@ Andratx solo enseñan pradera densa.
 
 ## Cambios recientes (sesión del 2026-11-20)
 
+- **Cinco clases y etiquetas parciales implementadas** (`plan_clases_ampliadas.md`): Posidonia, mata muerta,
+  roca, arena, otro; `annotated` por sitio; `load_optical(mosaic, masks, …)`; `optical_loss` con clases permitidas
+  para el fondo sin clase; `class_iou` por clase anotada; `auto_label.py` lee también los modelos antiguos de 3
+  clases (`LEGACY_CODES`). 24 tests en verde; prueba en CPU de `train.py` y `auto_label.py` (modelo nuevo y
+  antiguo) correcta. **Sin modelo de 5 clases entrenado todavía** (faltan ejemplos de arena y mata).
+- README con sección de resultados y dos figuras (`docs/images/`, script `scratch/readme_figures.py`).
+- Historial reescrito sin las líneas `Co-Authored-By` (petición del usuario); `origin/main` aún tiene los 2
+  commits antiguos: hace falta `git push --force-with-lease` del usuario.
+- Revisión movida a `runs/review/`; capa vacía `runs/review/andratx_13_52_22/andratx_13_52_22_extra_labels.geojson`.
+
+- **Recorte de 2025 `09_19_56` revisado por el usuario** (15:24) y convertido: `runs/review_masks/optical_2025_04_09/`
+  (factor 8 sobre 3,3 mm → 2,6 cm, con zona anotada). Posidonia 43,6 % → 41,9 % (IoU 0,96 con la propuesta), roca
+  0,9 % sin cambios. La propuesta venía de `scratch/propose_crops.py` (modelo con color igualado ∪ fondo oscuro), no
+  del modelo solo.
+
 - Polígonos revisados → máscaras (`optical_labeler/vectors.py`, `masks_from_vectors.py --area`): clase
   `ignore`, zona anotada, prioridad ignore > roca > Posidonia; `load_optical` y `configs/sites.yaml` aceptan
   `ignore_mask` y `area_mask`. 19 tests en verde; en el recorte revisado `16_13_30`, 48,8 % de Posidonia.
@@ -26,6 +41,8 @@ Andratx solo enseñan pradera densa.
 
 ## Decisiones en curso (revisables)
 
+- El usuario indica que en el recorte de 2025 hay fondo oscuro que es mata muerta, hoy dentro de los
+  polígonos de Posidonia: hay que redibujarlo como `dead_posidonia` antes de usar ese recorte.
 - Hipótesis por comprobar con el `d1prod`: parte del fallo en Es Trenc («el color difiere») viene de la
   falta de corrección fotométrica (Andratx, el entrenamiento, es `d1prod`).
 
@@ -34,19 +51,12 @@ Andratx solo enseñan pradera densa.
 
 ## Problemas latentes
 
-- **Los recortes de revisión siguen en `sss_segmentation/runs/optical/review/`** (y
-  `review_crops.zip`) porque el usuario los está editando en QGIS desde esa ruta. Se mueven a
-  `runs/review/` cuando termine.
+- `origin/main` conserva 2 commits con co-autoría de Claude hasta el push forzado del usuario.
 
 ## Siguiente acción
 
-**Revisión de los recortes de Es Trenc en pausa**: sus fotomosaicos son de la versión antigua (sin corrección
-fotométrica ni homografías refinadas) y se han pedido en `mosaic_d1prod` a Haddock (respuesta la semana del
-2026-11-23; `sss_segmentation/.claude/context/productos_haddock.md`). Lo corregido (`16_13_30`, parte de
-`14_57_04`) se conserva; hay que comprobar su encaje con el `d1prod` antes de reutilizarlo. El recorte de 2025
-(`09_19_56`) no depende del reprocesado y se puede revisar ya.
-
-Fase O5:
-1. Con el `d1prod`: re-proponer y re-recortar Es Trenc, reutilizar lo revisado si encaja.
-2. Reentrenar con Andratx + recortes; evaluar dejando un recorte fuera y en Pollença.
-3. Re-etiquetar los mosaicos de test de Es Trenc para el test SSS de `sss_segmentation`.
+El usuario anota arena y mata muerta: recorte de 2025 (`runs/review/optical_2025_04_09/`, redibujar la mata como
+`dead_posidonia`) y unos polígonos en Andratx (`runs/review/andratx_13_52_22/`, instrucciones en `LLEGEIX.txt`).
+Después: convertir, declarar en `configs/sites.yaml` y entrenar el modelo de 5 clases (tarea 10). Es Trenc sigue
+en pausa hasta el `mosaic_d1prod` de Haddock (semana del 2026-11-23); lo ya revisado (`16_13_30`, parte de
+`14_57_04`) se reutiliza si encaja.
