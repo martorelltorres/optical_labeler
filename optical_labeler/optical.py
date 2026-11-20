@@ -52,11 +52,14 @@ def read_class_mask(path, shape):
     return np.asarray(m.resize((shape[1], shape[0]), Image.BOX)) > 127
 
 
-def load_optical(mosaic, posidonia_mask=None, rock_mask=None, factor=4):
+def load_optical(mosaic, posidonia_mask=None, rock_mask=None, factor=4, ignore_mask=None,
+                 area_mask=None):
     """Read an RGB(A) mosaic reduced by `factor` (area average) and its class masks.
 
     Valid pixels come from the alpha band (or non-black RGB without one). Without masks every
-    code is NODATA; with them the valid pixels are BACKGROUND, ROCK or POSIDONIA.
+    code is NODATA; with them the valid pixels are BACKGROUND, ROCK or POSIDONIA (Posidonia over
+    rock where both masks are set). area_mask limits the annotated pixels to the reviewed area
+    (NODATA outside it); ignore_mask marks pixels that are IGNORE whatever the other masks say.
     """
     with rasterio.open(mosaic) as src:
         h, w = src.height // factor, src.width // factor
@@ -72,10 +75,13 @@ def load_optical(mosaic, posidonia_mask=None, rock_mask=None, factor=4):
     img[~valid] = 0.0
     codes = np.full((h, w), NODATA, np.uint8)
     if posidonia_mask is not None:
-        codes[valid] = BACKGROUND
+        lab = valid & read_class_mask(area_mask, (h, w)) if area_mask is not None else valid
+        codes[lab] = BACKGROUND
         if rock_mask is not None:
-            codes[valid & read_class_mask(rock_mask, (h, w))] = ROCK
-        codes[valid & read_class_mask(posidonia_mask, (h, w))] = POSIDONIA
+            codes[lab & read_class_mask(rock_mask, (h, w))] = ROCK
+        codes[lab & read_class_mask(posidonia_mask, (h, w))] = POSIDONIA
+        if ignore_mask is not None:
+            codes[lab & read_class_mask(ignore_mask, (h, w))] = IGNORE
     return OpticalMosaic(img, valid, codes, transform, crs, source_shape)
 
 

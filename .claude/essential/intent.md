@@ -18,8 +18,8 @@ etiquetas revisadas.
 
 ## Decisiones permanentes, en vigor
 
-- **Clases**: Posidonia, roca, resto. La roca gana sobre Posidonia donde se solapan en una
-  revisión humana.
+- **Clases**: Posidonia, roca, resto, más `ignore` en la revisión humana (blancos artificiales).
+  En polígonos revisados: ignore > roca > Posidonia donde se solapan.
 - **Contrato con `sss_segmentation`**: máscaras PNG 255 = clase sobre la rejilla del mosaico y
   GeoJSON con propiedad `class`. `sss_segmentation` las consume como si fueran manuales y no
   importa código de aquí.

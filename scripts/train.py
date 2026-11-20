@@ -64,7 +64,9 @@ def main():
     scfg = yaml.safe_load(open(args.sites))
     rel = lambda p: p and os.path.join(ROOT, p)
     load = lambda n: load_optical(rel(scfg["sites"][n]["mosaic"]), rel(scfg["sites"][n]["posidonia_mask"]),
-                                  rel(scfg["sites"][n].get("rock_mask")), scfg["factor"])
+                                  rel(scfg["sites"][n].get("rock_mask")), scfg["factor"],
+                                  rel(scfg["sites"][n].get("ignore_mask")),
+                                  rel(scfg["sites"][n].get("area_mask")))
     band, fc = scfg.get("band_m", 0.0), scfg["folds"]
     train_site = load(args.site)
     folds = optical_folds(train_site.codes, train_site.res, fc["k"], fc["block_m"], fc["gap_m"])

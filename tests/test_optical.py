@@ -8,7 +8,7 @@ import torch
 from affine import Affine
 from PIL import Image
 
-from optical_labeler.codes import BACKGROUND, NODATA, POSIDONIA, ROCK
+from optical_labeler.codes import BACKGROUND, IGNORE, NODATA, POSIDONIA, ROCK
 from optical_labeler.infer import predict_mosaic
 from optical_labeler.optical import (OpticalTiles, build_optical_unet, load_optical, optical_folds,
                                      optical_loss, region_codes)
@@ -45,6 +45,22 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(m.codes[5, 15], ROCK)
         self.assertEqual(m.codes[30, 15], BACKGROUND)
         self.assertTrue((m.image[~m.valid] == 0).all())
+
+    def test_ignore_and_area_masks(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = write_mosaic(d)
+            ign = np.zeros((40, 60), np.uint8)
+            ign[30:, 40:] = 255                   # inside the Posidonia half
+            area = np.zeros((40, 60), np.uint8)
+            area[:, :50] = 255                    # last 10 columns not reviewed
+            Image.fromarray(ign).save(os.path.join(d, "ign.png"))
+            Image.fromarray(area).save(os.path.join(d, "area.png"))
+            m = load_optical(path, os.path.join(d, "pos.png"), os.path.join(d, "rock.png"), factor=2,
+                             ignore_mask=os.path.join(d, "ign.png"), area_mask=os.path.join(d, "area.png"))
+        self.assertTrue((m.codes[:, 50:] == NODATA).all())          # outside the reviewed area
+        self.assertTrue((m.codes[30:, 40:50] == IGNORE).all())
+        self.assertTrue((m.codes[:30, 30:50] == POSIDONIA).all())
+        self.assertEqual(m.codes[5, 15], ROCK)
 
     def test_folds_and_region(self):
         with tempfile.TemporaryDirectory() as d:

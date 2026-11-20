@@ -15,11 +15,19 @@ Andratx solo enseñan pradera densa.
 
 ## Cambios recientes (sesión del 2026-11-20)
 
+- Polígonos revisados → máscaras (`optical_labeler/vectors.py`, `masks_from_vectors.py --area`): clase
+  `ignore`, zona anotada, prioridad ignore > roca > Posidonia; `load_optical` y `configs/sites.yaml` aceptan
+  `ignore_mask` y `area_mask`. 19 tests en verde; en el recorte revisado `16_13_30`, 48,8 % de Posidonia.
+  Commiteado.
+
 - Separación del repositorio; modelos y propuestas movidos a `runs/`.
 - Análisis OOF frente a la manual en Andratx (`context/analisis_oof_andratx.md`): la PO es casi
   perfecta y los errores están en los bordes; el punto débil es roca ↔ resto.
 
 ## Decisiones en curso (revisables)
+
+- Hipótesis por comprobar con el `d1prod`: parte del fallo en Es Trenc («el color difiere») viene de la
+  falta de corrección fotométrica (Andratx, el entrenamiento, es `d1prod`).
 
 - Los modelos `transfer` actuales se guardaron sin `res_m`: `auto_label.py` necesita
   `--train-res-m 0.0263`.
@@ -29,13 +37,16 @@ Andratx solo enseñan pradera densa.
 - **Los recortes de revisión siguen en `sss_segmentation/runs/optical/review/`** (y
   `review_crops.zip`) porque el usuario los está editando en QGIS desde esa ruta. Se mueven a
   `runs/review/` cuando termine.
-- `masks_from_vectors.py` hace ganar la Posidonia sobre la roca: contradice la decisión de
-  intent (gana la roca). No soporta todavía la zona anotada (`_area.geojson`) ni la clase `ignore`.
 
 ## Siguiente acción
 
-El usuario termina de corregir en QGIS los 4 recortes (`16_13_30` guardado a las 13:13;
-`14_57_04` abierto; `15_51_24` y 2025 `09_19_56` sin tocar). Después, fase O5 del plan:
-1. `masks_from_vectors`/`load_optical`: zona anotada, clase `ignore`, roca gana sobre Posidonia.
+**Revisión de los recortes de Es Trenc en pausa**: sus fotomosaicos son de la versión antigua (sin corrección
+fotométrica ni homografías refinadas) y se han pedido en `mosaic_d1prod` a Haddock (respuesta la semana del
+2026-11-23; `sss_segmentation/.claude/context/productos_haddock.md`). Lo corregido (`16_13_30`, parte de
+`14_57_04`) se conserva; hay que comprobar su encaje con el `d1prod` antes de reutilizarlo. El recorte de 2025
+(`09_19_56`) no depende del reprocesado y se puede revisar ya.
+
+Fase O5:
+1. Con el `d1prod`: re-proponer y re-recortar Es Trenc, reutilizar lo revisado si encaja.
 2. Reentrenar con Andratx + recortes; evaluar dejando un recorte fuera y en Pollença.
 3. Re-etiquetar los mosaicos de test de Es Trenc para el test SSS de `sss_segmentation`.

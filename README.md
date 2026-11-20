@@ -56,9 +56,9 @@ docker compose run --rm labeler python scripts/train.py --protocol transfer \
 docker compose run --rm labeler python scripts/auto_label.py \
     --models 'runs/optical_r34/transfer/all/seed*/model.pt' --mosaic <mosaic.tif> --out <prefix>
 
-# Reviewed polygons → masks
+# Reviewed polygons → masks (optionally clipped to the reviewed area)
 docker compose run --rm labeler python scripts/masks_from_vectors.py --vectors <prefix>_labels.geojson \
-    --mosaic <mosaic.tif> --out <reviewed_prefix>
+    --mosaic <mosaic.tif> --out <reviewed_prefix> [--area <area.geojson>]
 ```
 
 `train.py` writes to `runs/<model>/<protocol>/<split>/seed<k>/` the model (`model.pt`), the metrics
@@ -75,8 +75,16 @@ without that resolution need it through `--train-res-m`. It writes:
 | `<prefix>_doubt.tif` | band 1: 1 − highest probability; band 2: standard deviation of P(Posidonia) between models |
 | `<prefix>_labels.geojson` | Posidonia and rock polygons (mosaic CRS) with a `class` property and their mean probability and doubt |
 
-When reviewing in the GIS, every polygon keeps its `class` property (`posidonia` or `rock`);
-`masks_from_vectors.py` only reads that property. The polygons must be in the CRS of the mosaic.
+When reviewing in the GIS, every polygon keeps its `class` property: `posidonia`, `rock`, or
+`ignore` for objects that must count neither as Posidonia nor as background (man-made targets, for
+example). `masks_from_vectors.py` only reads that property and refuses any other value. Where
+polygons overlap, `ignore` wins over `rock` and `rock` over `posidonia`. It writes
+`<reviewed_prefix>_posidonia.png`, `_rock.png` and `_ignore.png`; with `--area` (a GeoJSON of the
+reviewed area) every mask is clipped to that area and `_area.png` is written too. The polygons must
+be in the CRS of the mosaic.
+
+In `configs/sites.yaml` a site may then add `ignore_mask` (pixels left out of training and metrics)
+and `area_mask` (outside it nothing is labeled) next to `posidonia_mask` and `rock_mask`.
 
 ## Tests
 

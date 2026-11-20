@@ -1,6 +1,8 @@
 # Optical mosaics with manual masks (scripts/train.py).
 # Paths are relative to the package root; data/ is the read-only data mount (see README).
-# Masks may be drawn on any downscaled copy of the mosaic.
+# Masks may be drawn on any downscaled copy of the mosaic. Optional per site: rock_mask,
+# ignore_mask (pixels left out of training and metrics) and area_mask (the reviewed area;
+# outside it nothing is labeled), as written by scripts/masks_from_vectors.py.
 factor: 4                 # working resolution = mosaic resolution x factor (x4 mosaics: ~2.6 cm)
 band_m: 0.1               # band around Posidonia boundaries ignored in training and evaluation
 folds: {k: 3, block_m: 5.0, gap_m: 0.5}
