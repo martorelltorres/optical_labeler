@@ -41,7 +41,8 @@ etiquetas revisadas.
 | `CLAUDE.md` | cómo se trabaja |
 | `.claude/plans/plan_etiquetado_optico.md` | plan de la vía 1: fases, criterios A–D, resultados, fase O5 |
 | `.claude/plans/plan_clases_ampliadas.md` | plan de las cinco clases y las etiquetas parciales |
-| `runs/review/` | recortes de revisión en QGIS (movidos desde `sss_segmentation` el 2026-11-20) y capa de Andratx para arena y mata |
+| `runs/review/` | recortes de revisión en QGIS (movidos desde `sss_segmentation` el 2026-11-20) |
+| `runs/cvat/` | imágenes y sidecars exportados para CVAT (carpeta compartida de CVAT) |
 | `.claude/context/analisis_oof_andratx.md` | etiquetas automáticas frente a la manual en Andratx |
 | `.claude/history/done.md` | la historia del proyecto, un hito por línea |
 | `runs/optical_r34/` | modelos `cv` (3 folds × 3 semillas) y `transfer` (todo Andratx, 3 semillas) |

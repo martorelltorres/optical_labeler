@@ -2,61 +2,39 @@
 
 ## Estado actual
 
-Código separado de `sss_segmentation` el 2026-11-20: paquete `optical_labeler/` (`optical`,
-`codes`, `tiling`, `split`, `infer`), scripts `train.py`, `auto_label.py`, `masks_from_vectors.py`,
-15 tests en verde (ejecutados en la imagen `sss_segmentation:cpu`; la imagen propia
-`optical_labeler:cpu/cu121` aún no se ha construido). Re-etiquetar `optical_10_06_31` con el código
-movido da máscaras idénticas y probabilidades idénticas a las anteriores. Primer commit en `main`.
+Paquete `optical_labeler/` con cinco clases (Posidonia, mata muerta, roca, arena, otro), etiquetas parciales,
+revisión en QGIS o en **CVAT** (`cvat.py`, `scripts/cvat_export.py`/`cvat_import.py`), 30 tests en verde. Imagen
+`optical_labeler:cu121` construida.
 
-Resultados del plan (`plans/plan_etiquetado_optico.md`): A y B cumplen (Andratx PO 0,977 / roca
-0,702; Pollença PO 0,913); C pierde 3,9 puntos frente a la manual (dentro de ~1 desviación entre
-semillas). **Fuera de Andratx falla** (Es Trenc ~60 %, 2025 ~3 % de la pradera): las etiquetas de
-Andratx solo enseñan pradera densa.
+**Andratx 13_52_22 etiquetado en CVAT** (tarea 2, export de las 12:47 del 2026-11-23): 94 % de la zona válida;
+máscaras en `runs/review_masks/andratx_13_52_22/cvat_20261123_1247/` y copia para `sss_segmentation` en
+`runs/labels/andratx_13_52_22_cvat/` (montada allí como `labels/`). **Modelo óptico de 5 clases**
+`optical_r34_c5_cvat` (CV en Andratx, 3 folds × 3 semillas): Posidonia 0,965 ± 0,009, roca 0,857, arena 0,953,
+otro 0,629, mata muerta 0,317. Sin transfer todavía. Fuera de Andratx los modelos anteriores fallaban (Es Trenc
+~60 %, 2025 ~3 % de la pradera).
 
-## Cambios recientes (sesión del 2026-11-20)
+## Cambios recientes (sesión del 2026-11-23)
 
-- **Cinco clases y etiquetas parciales implementadas** (`plan_clases_ampliadas.md`): Posidonia, mata muerta,
-  roca, arena, otro; `annotated` por sitio; `load_optical(mosaic, masks, …)`; `optical_loss` con clases permitidas
-  para el fondo sin clase; `class_iou` por clase anotada; `auto_label.py` lee también los modelos antiguos de 3
-  clases (`LEGACY_CODES`). 24 tests en verde; prueba en CPU de `train.py` y `auto_label.py` (modelo nuevo y
-  antiguo) correcta. **Sin modelo de 5 clases entrenado todavía** (faltan ejemplos de arena y mata).
-- README con sección de resultados y dos figuras (`docs/images/`, script `scratch/readme_figures.py`).
-- Historial reescrito sin las líneas `Co-Authored-By` (petición del usuario); `origin/main` aún tiene los 2
-  commits antiguos: hace falta `git push --force-with-lease` del usuario.
-- Revisión movida a `runs/review/`; capa vacía `runs/review/andratx_13_52_22/andratx_13_52_22_extra_labels.geojson`.
-
-- **Recorte de 2025 `09_19_56` revisado por el usuario** (15:24) y convertido: `runs/review_masks/optical_2025_04_09/`
-  (factor 8 sobre 3,3 mm → 2,6 cm, con zona anotada). Posidonia 43,6 % → 41,9 % (IoU 0,96 con la propuesta), roca
-  0,9 % sin cambios. La propuesta venía de `scratch/propose_crops.py` (modelo con color igualado ∪ fondo oscuro), no
-  del modelo solo.
-
-- Polígonos revisados → máscaras (`optical_labeler/vectors.py`, `masks_from_vectors.py --area`): clase
-  `ignore`, zona anotada, prioridad ignore > roca > Posidonia; `load_optical` y `configs/sites.yaml` aceptan
-  `ignore_mask` y `area_mask`. 19 tests en verde; en el recorte revisado `16_13_30`, 48,8 % de Posidonia.
-  Commiteado.
-
-- Separación del repositorio; modelos y propuestas movidos a `runs/`.
-- Análisis OOF frente a la manual en Andratx (`context/analisis_oof_andratx.md`): la PO es casi
-  perfecta y los errores están en los bordes; el punto débil es roca ↔ resto.
+- Etiquetado completo de Andratx en CVAT con SAM; tres revisiones de las etiquetas (quedan huecos: ~11 m²
+  alrededor de las manchas de mata muerta y una franja de 15 m² en el borde arena–roca del este).
+- Conversión CVAT ↔ máscaras (`cvat.py`; los contornos cerrados se rellenan; prioridad ignore > roca > mata >
+  arena > otro > Posidonia). Configs del entrenamiento en `runs/review_masks/andratx_13_52_22/`
+  (`sites_andratx_cvat.yaml`, `unet_c5_cvat.yaml`); lanzador `scratch/run_optical_c5_cvat.sh`.
+- `sss_segmentation` consume estas máscaras (sus resultados, en su propio `.claude/`).
+- `origin/main` ya está sincronizado con la historia reescrita.
 
 ## Decisiones en curso (revisables)
 
-- El usuario indica que en el recorte de 2025 hay fondo oscuro que es mata muerta, hoy dentro de los
-  polígonos de Posidonia: hay que redibujarlo como `dead_posidonia` antes de usar ese recorte.
-- Hipótesis por comprobar con el `d1prod`: parte del fallo en Es Trenc («el color difiere») viene de la
-  falta de corrección fotométrica (Andratx, el entrenamiento, es `d1prod`).
-
-- Los modelos `transfer` actuales se guardaron sin `res_m`: `auto_label.py` necesita
-  `--train-res-m 0.0263`.
+- La mata muerta no se separa bien ni en el óptico (0,32): revisar la definición de la clase antes de invertir en
+  ella.
+- Hipótesis por comprobar con el `d1prod`: parte del fallo en Es Trenc viene de la falta de corrección fotométrica.
+- Los modelos `transfer` antiguos se guardaron sin `res_m`: `auto_label.py` necesita `--train-res-m 0.0263`.
 
 ## Problemas latentes
 
-- `origin/main` conserva 2 commits con co-autoría de Claude hasta el push forzado del usuario.
+- El recorte de 2025 tiene mata muerta dentro de los polígonos de Posidonia (tarea 8).
 
 ## Siguiente acción
 
-El usuario anota arena y mata muerta: recorte de 2025 (`runs/review/optical_2025_04_09/`, redibujar la mata como
-`dead_posidonia`) y unos polígonos en Andratx (`runs/review/andratx_13_52_22/`, instrucciones en `LLEGEIX.txt`).
-Después: convertir, declarar en `configs/sites.yaml` y entrenar el modelo de 5 clases (tarea 10). Es Trenc sigue
-en pausa hasta el `mosaic_d1prod` de Haddock (semana del 2026-11-23); lo ya revisado (`16_13_30`, parte de
-`14_57_04`) se reutiliza si encaja.
+Rellenar los huecos de Andratx en CVAT (usuario). Después: transfer del modelo de 5 clases a Pollença y al recorte
+de 2025 (tarea 10). Es Trenc sigue en pausa hasta el `mosaic_d1prod` de Haddock.

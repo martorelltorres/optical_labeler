@@ -6,3 +6,5 @@
 2026-11-20 — Conversión de polígonos revisados con zona anotada, clase `ignore` y roca sobre Posidonia.
 2026-11-20 — Recorte de 2025 `09_19_56` revisado por el usuario y convertido a máscaras (`runs/review_masks/`).
 2026-11-20 — Clases ampliadas (mata muerta, arena, otro) con etiquetas parciales por sitio; README con resultados; historial sin co-autoría de Claude.
+2026-11-20 — CVAT v2.82.0 en azken y conversión CVAT ↔ máscaras; tareas de anotación creadas.
+2026-11-23 — Andratx etiquetado en CVAT y modelo óptico de 5 clases en CV: Posidonia 0,965, mata muerta 0,317 (ver project-state).

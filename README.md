@@ -95,6 +95,25 @@ it. It writes `<reviewed_prefix>_<class>.png` for every class and `ignore`; with
 GeoJSON of the reviewed area) every mask is clipped to that area and `_area.png` is written too.
 The polygons must be in the CRS of the mosaic.
 
+### Annotating in CVAT
+
+As an alternative to a GIS, mosaics can be annotated in [CVAT](https://github.com/cvat-ai/cvat)
+with brush masks or polygons:
+
+```bash
+# Mosaic -> downscaled JPEG + grid sidecar (+ the polygons of a GeoJSON as brush masks to start from)
+docker compose run --rm labeler python scripts/cvat_export.py --mosaic <mosaic.tif> --out <cvat share> \
+    --name <name> --factor 2 [--labels <labels.geojson>] [--area <area.geojson>]
+
+# CVAT export ("CVAT for images 1.1" zip) -> class masks on the exported image
+docker compose run --rm labeler python scripts/cvat_import.py --annotations <export.zip> \
+    --sidecar <cvat share>/<name>.json --out <prefix>
+```
+
+The CVAT project needs the labels `posidonia`, `dead_posidonia`, `rock`, `sand`, `other` and
+`ignore`; overlaps resolve with the same priority as reviewed polygons. The masks are drawn on a
+downscaled copy of the mosaic, so they go into `configs/sites.yaml` as they are.
+
 ## Results
 
 Models with three classes (Posidonia, rock, other bottom), trained on the Andratx mosaic (13_52_22,
